@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  # Base de datos PostgreSQL
+  db:
+    image: postgres:15-alpine
+    container_name: pki_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pki_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Servicio CA (Certificate Authority)
+  ca-service:
+    build:
+      context: ./ca-service
+      dockerfile: Dockerfile
+    container_name: pki_ca_service
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/pki_db
+    ports:
+      - "8001:8001"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./ca-service:/app
+    restart: unless-stopped
+
+  # Auth Gateway (para la próxima fase)
+  auth-gateway:
+    build:
+      context: ./auth-gateway
+      dockerfile: Dockerfile
+    container_name: pki_auth_gateway
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./auth-gateway:/app
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
