@@ -47,7 +47,7 @@ async def init_db():
     Inicializa las tablas de la base de datos
     """
     # Importar modelos para que se registren en Base.metadata
-    from models import CertificateAuthority  # noqa: F401
+    from models import CertificateAuthority, Certificate, RevokedCertificate  # noqa: F401
     
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
