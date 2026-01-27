@@ -4,9 +4,20 @@ Sistema de infraestructura de clave pública (PKI) con microservicios.
 
 ## Arquitectura
 
-- **ca-service**: Servicio de Autoridad Certificadora (CA) con cifrado de claves privadas
-- **auth-gateway**: Gateway de autenticación (próximamente)
-- **PostgreSQL**: Base de datos para persistencia
+- **auth-gateway** (Puerto 8000): Gateway de autenticación JWT y proxy reverso
+- **ca-service** (Puerto 8001): Servicio de Autoridad Certificadora (CA) con cifrado de claves privadas
+- **PostgreSQL** (Puerto 5432): Base de datos para persistencia
+
+### Flujo de Autenticación
+
+```
+Cliente -> Auth Gateway -> CA Service
+   1. POST /login (obtener token JWT)
+   2. GET /crypto/* con Bearer token
+   3. Gateway valida token
+   4. Gateway proxy a CA Service
+   5. Respuesta al cliente
+```
 
 ##  Seguridad
 
@@ -60,21 +71,44 @@ nano .env
 docker-compose up --build
 ```
 
-### 3. Probar el cifrado
+### 3. Obtener token de autenticación
 
-Accede a la documentación interactiva:
-```
-http://localhost:8001/docs
+Primero, obtén un token JWT:
+```bash
+curl -X POST "http://localhost:8000/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"ikerlan","password":"ikerlan"}'
 ```
 
-Prueba el endpoint `/test/encryption`:
+Respuesta:
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer"
+}
+```
+
+### 4. Probar el cifrado (a través del proxy)
+
+Usa el token para acceder al ca-service a través del gateway:
+```bash
+TOKEN="tu_token_aqui"
+
+curl -X POST "http://localhost:8000/crypto/test/encryption" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hola Mundo Secreto"}'
+```
+
+### 5. Acceso directo al CA Service (sin autenticación - solo desarrollo)
+
 ```bash
 curl -X POST "http://localhost:8001/test/encryption" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hola Mundo Secreto"}'
 ```
 
-Se deberia recibir una respuesta similar a:
+Respuesta esperada:
 ```json
 {
   "original": "Hola Mundo Secreto",
@@ -86,11 +120,35 @@ Se deberia recibir una respuesta similar a:
 
 ## 📋 Endpoints
 
-### CA Service (Puerto 8001)
+### Auth Gateway (Puerto 8000) - Punto de entrada principal
+
+- `POST /login` - Autenticación (retorna JWT token)
+  - Credenciales: `username: ikerlan`, `password: ikerlan`
+- `GET|POST|PUT|DELETE|PATCH /crypto/*` - Proxy a CA Service (requiere autenticación)
+- `GET /health` - Health check
+- `GET /docs` - Documentación Swagger
+
+**Ejemplo de uso:**
+```bash
+# 1. Login
+TOKEN=$(curl -s -X POST "http://localhost:8000/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"ikerlan","password":"ikerlan"}' | jq -r '.access_token')
+
+# 2. Usar el token
+curl -X POST "http://localhost:8000/crypto/test/encryption" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Prueba"}'
+```
+
+### CA Service (Puerto 8001) - Acceso directo (solo desarrollo)
 
 - `GET /health` - Health check
 - `POST /test/encryption` - Probar cifrado/descifrado (solo testing)
 - `GET /docs` - Documentación Swagger
+
+⚠️ **En producción, el CA Service debe estar solo accesible internamente (via auth-gateway)**
 
 ## Modelo de Base de Datos
 
