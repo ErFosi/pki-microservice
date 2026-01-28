@@ -202,13 +202,13 @@ async def sign_csr(
     Firmar un Certificate Signing Request (CSR)
     
     1. Recibe un CSR en formato PEM
-    2. Busca una CA disponible (usa la primera)
+    2. Busca la CA especificada por common_name (o usa la primera si no se especifica)
     3. Descifra la clave privada de la CA
     4. Firma el CSR generando un certificado
     5. Guarda el certificado en la BD
     
     Args:
-        request: Debe contener el CSR en formato PEM
+        request: Debe contener el CSR en formato PEM y opcionalmente el ca_common_name
     
     Returns:
         Certificado firmado en formato PEM
@@ -217,15 +217,31 @@ async def sign_csr(
         # 1. Parsear el CSR
         csr = pki_utils.csr_from_pem(request.csr)
         
-        # 2. Obtener una CA (usamos la primera disponible)
-        result = await db.execute(select(CertificateAuthority).limit(1))
-        ca = result.scalar_one_or_none()
-        
-        if not ca:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No CA found. Please create a CA first using POST /crypto/ca"
+        # 2. Obtener la CA especificada o la primera disponible
+        if request.ca_common_name:
+            # Buscar CA por common_name
+            result = await db.execute(
+                select(CertificateAuthority).where(
+                    CertificateAuthority.common_name == request.ca_common_name
+                )
             )
+            ca = result.scalar_one_or_none()
+            
+            if not ca:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"CA with common_name '{request.ca_common_name}' not found"
+                )
+        else:
+            # Usar la primera CA disponible
+            result = await db.execute(select(CertificateAuthority).limit(1))
+            ca = result.scalar_one_or_none()
+            
+            if not ca:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No CA found. Please create a CA first using POST /crypto/ca"
+                )
         
         # 3. Descifrar la clave privada de la CA
         decrypted_private_key_pem = crypto.decrypt(ca.private_key)
@@ -349,12 +365,15 @@ async def validate_certificate(
     Validar un certificado
     
     Verifica:
-    1. Firma del certificado contra la CA
+    1. Firma del certificado contra la CA emisora
     2. Fechas de validez
     3. Estado de revocación (CRL)
     
+    El CA emisor se determina automáticamente desde el certificado (issuer),
+    pero puede especificarse manualmente con ca_common_name.
+    
     Args:
-        request: Certificado en formato PEM
+        request: Certificado en formato PEM y opcionalmente ca_common_name
     
     Returns:
         valid: True/False y razón si no es válido
@@ -378,24 +397,60 @@ async def validate_certificate(
                 reason=f"Certificate is revoked: {revoked.reason}"
             )
         
-        # 3. Buscar la CA que lo firmó (buscamos por issuer)
-        # Por simplicidad, validamos con todas las CAs disponibles
-        result = await db.execute(select(CertificateAuthority))
-        cas = result.scalars().all()
+        # 3. Determinar qué CA usar para validación
+        if request.ca_common_name:
+            # Usar la CA especificada
+            result = await db.execute(
+                select(CertificateAuthority).where(
+                    CertificateAuthority.common_name == request.ca_common_name
+                )
+            )
+            ca = result.scalar_one_or_none()
+            
+            if not ca:
+                return CertificateValidateResponse(
+                    valid=False,
+                    reason=f"Specified CA '{request.ca_common_name}' not found"
+                )
+            
+            cas_to_check = [ca]
+        else:
+            # Extraer el issuer common name del certificado
+            try:
+                issuer_cn = pki_utils.get_certificate_issuer_common_name(certificate)
+                
+                # Buscar la CA por issuer common name
+                result = await db.execute(
+                    select(CertificateAuthority).where(
+                        CertificateAuthority.common_name == issuer_cn
+                    )
+                )
+                ca = result.scalar_one_or_none()
+                
+                if ca:
+                    cas_to_check = [ca]
+                else:
+                    # Si no encontramos la CA específica, validar contra todas
+                    result = await db.execute(select(CertificateAuthority))
+                    cas_to_check = result.scalars().all()
+            except Exception:
+                # Si no se puede extraer el issuer, validar contra todas las CAs
+                result = await db.execute(select(CertificateAuthority))
+                cas_to_check = result.scalars().all()
         
-        if not cas:
+        if not cas_to_check:
             return CertificateValidateResponse(
                 valid=False,
                 reason="No CA found to validate against"
             )
         
-        # 4. Intentar validar con cada CA
-        for ca in cas:
+        # 4. Intentar validar con las CAs seleccionadas
+        for ca in cas_to_check:
             ca_certificate = pki_utils.certificate_from_pem(ca.certificate_pem)
             if pki_utils.validate_certificate(certificate, ca_certificate):
                 return CertificateValidateResponse(
                     valid=True,
-                    reason="Certificate is valid"
+                    reason=f"Certificate is valid (issued by {ca.common_name})"
                 )
         
         return CertificateValidateResponse(
