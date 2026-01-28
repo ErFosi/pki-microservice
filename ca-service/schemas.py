@@ -34,6 +34,7 @@ class CSRSignRequest(BaseModel):
 class CSRSignResponse(BaseModel):
     """Schema para respuesta de CSR firmado"""
     crt: str = Field(..., description="Certificado firmado en formato PEM")
+    id: int = Field(..., description="ID del certificado en la base de datos")
 
 
 class CertificateValidateRequest(BaseModel):

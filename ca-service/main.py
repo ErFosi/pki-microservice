@@ -255,8 +255,9 @@ async def sign_csr(
         )
         db.add(cert_record)
         await db.commit()
+        await db.refresh(cert_record)
         
-        return CSRSignResponse(crt=certificate_pem)
+        return CSRSignResponse(crt=certificate_pem, id=cert_record.id)
         
     except HTTPException:
         raise
