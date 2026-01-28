@@ -6,10 +6,12 @@ Endpoints:
 - POST /crypto/crt - Firmar un CSR
 - POST /crypto/cert/revoke/{id} - Revocar un certificado
 - POST /crypto/validate - Validar un certificado
+- GET /crl - Obtener la CRL en formato PEM
 - POST /test/encryption - Prueba de cifrado/descifrado (testing)
 - GET /health - Health check
 """
 from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from contextlib import asynccontextmanager
@@ -110,7 +112,8 @@ async def root():
             "create_ca": "POST /ca",
             "sign_csr": "POST /crt",
             "revoke_cert": "POST /cert/revoke/{id}",
-            "validate_cert": "POST /validate"
+            "validate_cert": "POST /validate",
+            "get_crl": "GET /crl"
         }
     }
 
@@ -409,6 +412,50 @@ async def validate_certificate(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error validating certificate: {str(e)}"
+        )
+
+
+@app.get("/crl", response_class=PlainTextResponse)
+async def get_crl(db: AsyncSession = Depends(get_db), crypto: CryptoHelper = Depends(get_crypto_helper)):
+    """
+    Obtener la Certificate Revocation List (CRL) en formato PEM
+    
+    Returns:
+        CRL en formato PEM
+    """
+    try:
+        # Obtener la primera CA (por simplicidad; en producción, especificar cuál)
+        result = await db.execute(select(CertificateAuthority).limit(1))
+        ca = result.scalar_one_or_none()
+        
+        if not ca:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No CA found"
+            )
+        
+        # Obtener seriales revocados
+        result = await db.execute(select(RevokedCertificate.serial_number))
+        revoked_serials = [row[0] for row in result.fetchall()]
+        
+        # Parsear certificado de la CA
+        ca_cert = pki_utils.certificate_from_pem(ca.certificate_pem)
+        
+        # Descifrar la clave privada
+        decrypted_private_key_pem = crypto.decrypt(ca.private_key)
+        ca_private_key = pki_utils.private_key_from_pem(decrypted_private_key_pem)
+        
+        # Generar la CRL
+        crl_pem = pki_utils.generate_crl(ca_cert, ca_private_key, revoked_serials)
+        
+        return crl_pem
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating CRL: {str(e)}"
         )
 
 

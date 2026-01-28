@@ -314,3 +314,50 @@ def get_certificate_common_name(certificate: x509.Certificate) -> str:
         Common Name del certificado
     """
     return certificate.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+
+
+def generate_crl(
+    ca_certificate: x509.Certificate,
+    ca_private_key: rsa.RSAPrivateKey,
+    revoked_serials: list[str],
+    validity_hours: int = 168  # 7 días por defecto
+) -> str:
+    """
+    Genera una Certificate Revocation List (CRL) en formato PEM
+    
+    Args:
+        ca_certificate: Certificado de la CA
+        ca_private_key: Clave privada de la CA
+        revoked_serials: Lista de números de serie revocados (en hex)
+        validity_hours: Horas de validez de la CRL
+    
+    Returns:
+        CRL en formato PEM (string)
+    """
+    # Crear entradas revocadas
+    revoked_certs = []
+    for serial_hex in revoked_serials:
+        try:
+            serial_int = int(serial_hex, 16)
+            revoked_cert = x509.RevokedCertificateBuilder()
+            revoked_cert = revoked_cert.serial_number(serial_int)
+            revoked_cert = revoked_cert.revocation_date(datetime.utcnow())
+            revoked_certs.append(revoked_cert.build())
+        except ValueError:
+            # Saltar seriales inválidos
+            continue
+    
+    # Construir la CRL
+    crl_builder = x509.CertificateRevocationListBuilder()
+    crl_builder = crl_builder.issuer_name(ca_certificate.subject)
+    crl_builder = crl_builder.last_update(datetime.utcnow())
+    crl_builder = crl_builder.next_update(datetime.utcnow() + timedelta(hours=validity_hours))
+    
+    for revoked in revoked_certs:
+        crl_builder = crl_builder.add_revoked_certificate(revoked)
+    
+    # Firmar la CRL con la clave privada de la CA
+    crl = crl_builder.sign(ca_private_key, hashes.SHA256())
+    
+    # Serializar a PEM
+    return crl.public_bytes(serialization.Encoding.PEM).decode('utf-8')
