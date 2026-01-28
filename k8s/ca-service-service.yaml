@@ -1,0 +1,16 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pki-ca-service
+  namespace: pki-system
+  labels:
+    app: pki-ca-service
+spec:
+  selector:
+    app: pki-ca-service
+  ports:
+    - port: 8001
+      targetPort: 8001
+  type: ClusterIP
+

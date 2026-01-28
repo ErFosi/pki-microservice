@@ -1,0 +1,32 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: pki-microservice
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - postgres-deployment.yaml
+  - postgres-service.yaml
+  - ca-service-deployment.yaml
+  - ca-service-service.yaml
+  - auth-gateway-deployment.yaml
+  - auth-gateway-service.yaml
+  - ingress.yaml
+
+images:
+  - name: pki-ca-service
+    newTag: latest
+  - name: pki-auth-gateway
+    newTag: latest
+
+commonLabels:
+  app.kubernetes.io/name: pki-microservice
+  app.kubernetes.io/version: "1.0.0"
+  app.kubernetes.io/component: backend
+  app.kubernetes.io/part-of: pki-system
+
+namespace: pki-system

@@ -1,0 +1,49 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pki-auth-gateway
+  namespace: pki-system
+  labels:
+    app: pki-auth-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pki-auth-gateway
+  template:
+    metadata:
+      labels:
+        app: pki-auth-gateway
+    spec:
+      containers:
+        - name: auth-gateway
+          image: pki-auth-gateway:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: pki-config
+            - secretRef:
+                name: pki-secrets
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+

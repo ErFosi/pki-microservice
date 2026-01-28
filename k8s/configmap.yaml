@@ -1,0 +1,12 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pki-config
+  namespace: pki-system
+data:
+  DATABASE_URL: "postgresql+asyncpg://postgres:postgres@pki-postgres:5432/pki_db"
+  CA_SERVICE_URL: "http://pki-ca-service:8001"
+  DEBUG: "False"
+  APP_NAME: "PKI Microservice"
+  ACCESS_TOKEN_EXPIRE_MINUTES: "30"

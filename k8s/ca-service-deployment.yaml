@@ -1,0 +1,58 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pki-ca-service
+  namespace: pki-system
+  labels:
+    app: pki-ca-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pki-ca-service
+  template:
+    metadata:
+      labels:
+        app: pki-ca-service
+    spec:
+      containers:
+        - name: ca-service
+          image: pki-ca-service:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - configMapRef:
+                name: pki-config
+            - secretRef:
+                name: pki-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:15-alpine
+          command:
+            - sh
+            - -c
+            - >-
+              until pg_isready -h pki-postgres -p 5432 -U postgres;
+              do echo waiting for postgres; sleep 2; done;
+
