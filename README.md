@@ -46,7 +46,7 @@ MASTER_KEY=tu_clave_generada_aqui
 ```
 
  **IMPORTANTE, TEMA CIFRADO**: 
-- NUNCA commitees el archivo `.env` a Git
+- NUNCA se commitea el archivo `.env` a Git, hay un example.env pero de plantilla nada mas.
 - Si pierdes la `MASTER_KEY`, perderás acceso a las claves privadas cifradas
 - Usa una clave diferente para desarrollo y producción
 
