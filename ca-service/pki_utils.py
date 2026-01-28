@@ -316,6 +316,19 @@ def get_certificate_common_name(certificate: x509.Certificate) -> str:
     return certificate.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
 
 
+def get_certificate_issuer_common_name(certificate: x509.Certificate) -> str:
+    """
+    Obtiene el Common Name del emisor (issuer) de un certificado
+    
+    Args:
+        certificate: Certificado X.509
+    
+    Returns:
+        Common Name del emisor
+    """
+    return certificate.issuer.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+
+
 def generate_crl(
     ca_certificate: x509.Certificate,
     ca_private_key: rsa.RSAPrivateKey,

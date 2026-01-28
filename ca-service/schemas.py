@@ -29,6 +29,7 @@ class CAResponse(BaseModel):
 class CSRSignRequest(BaseModel):
     """Schema para firmar un CSR"""
     csr: str = Field(..., description="Certificate Signing Request en formato PEM")
+    ca_common_name: str | None = Field(None, description="Common name de la CA que firmará el CSR. Si no se especifica, se usa la primera CA disponible")
 
 
 class CSRSignResponse(BaseModel):
@@ -39,6 +40,7 @@ class CSRSignResponse(BaseModel):
 class CertificateValidateRequest(BaseModel):
     """Schema para validar un certificado"""
     crt: str = Field(..., description="Certificado en formato PEM a validar")
+    ca_common_name: str | None = Field(None, description="Common name de la CA emisora. Si no se especifica, se extrae del certificado")
 
 
 class CertificateValidateResponse(BaseModel):
