@@ -211,9 +211,3 @@ El endpoint `/test/encryption` te permite verificar que:
 3. El descifrado recupera el texto original
 4. Los datos coinciden
 
-## Próximos Pasos
-
-- [ ] Implementar creación de CAs
-- [ ] Generar certificados firmados
-- [ ] Implementar autenticación en auth-gateway
-- [ ] Agregar endpoints de gestión de certificados
