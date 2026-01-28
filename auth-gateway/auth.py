@@ -83,7 +83,7 @@ def authenticate_user(username: str, password: str) -> bool:
     """
     Autentica un usuario
     
-    ⚠️ HARDCODED para la demo - En producción usar una base de datos
+    HARDCODED para la demo - En producción usar una base de datos
     
     Args:
         username: Nombre de usuario

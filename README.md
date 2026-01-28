@@ -118,7 +118,7 @@ Respuesta esperada:
 }
 ```
 
-## 📋 Endpoints
+## Endpoints
 
 ### Auth Gateway (Puerto 8000) - Punto de entrada principal
 
@@ -148,7 +148,7 @@ curl -X POST "http://localhost:8000/crypto/test/encryption" \
 - `POST /test/encryption` - Probar cifrado/descifrado (solo testing)
 - `GET /docs` - Documentación Swagger
 
-⚠️ **En producción, el CA Service debe estar solo accesible internamente (via auth-gateway)**
+ **En producción, el CA Service debe estar solo accesible internamente (via auth-gateway)**
 
 ## Modelo de Base de Datos
 
@@ -187,7 +187,7 @@ pki-microservice/
 └── README.md
 ```
 
-## 🔍 Verificar la Configuración
+## Verificar la Configuración
 
 ```bash
 # Ver logs del servicio
@@ -203,7 +203,7 @@ docker-compose exec db psql -U postgres -d pki_db
 \d certificate_authorities
 ```
 
-## 🧪 Testing del Cifrado
+## Testing del Cifrado
 
 El endpoint `/test/encryption` te permite verificar que:
 1. La `MASTER_KEY` está configurada correctamente
@@ -211,7 +211,7 @@ El endpoint `/test/encryption` te permite verificar que:
 3. El descifrado recupera el texto original
 4. Los datos coinciden
 
-## 📝 Próximos Pasos
+## Próximos Pasos
 
 - [ ] Implementar creación de CAs
 - [ ] Generar certificados firmados
