@@ -23,6 +23,8 @@ from models import CertificateAuthority, Certificate, RevokedCertificate
 from schemas import (
     EncryptionTestRequest, EncryptionTestResponse,
     CACreateRequest, CACreateResponse,
+    CAResponse, CAListResponse,
+    CertificateResponse, CertificateListResponse,
     CSRSignRequest, CSRSignResponse,
     CertificateValidateRequest, CertificateValidateResponse,
     CertificateRevokeRequest, CertificateRevokeResponse
@@ -109,13 +111,169 @@ async def root():
         "docs": "/docs",
         "health": "/health",
         "endpoints": {
+            "list_cas": "GET /ca",
+            "get_ca": "GET /ca/{id}",
             "create_ca": "POST /ca",
+            "list_certificates": "GET /certificates",
+            "get_certificate": "GET /certificates/{id}",
             "sign_csr": "POST /crt",
             "revoke_cert": "POST /cert/revoke/{id}",
             "validate_cert": "POST /validate",
-            "get_crl": "GET /crl"
+            "get_crl": "GET /crl?ca_common_name={name}"
         }
     }
+
+
+@app.get("/ca", response_model=list[CAListResponse])
+async def list_cas(db: AsyncSession = Depends(get_db)):
+    """
+    Listar todas las Certificate Authorities (CAs)
+    
+    Returns:
+        Lista de CAs con información básica
+    """
+    try:
+        result = await db.execute(select(CertificateAuthority))
+        cas = result.scalars().all()
+        
+        return [
+            CAListResponse(
+                id=ca.id,
+                common_name=ca.common_name,
+                created_at=ca.created_at
+            )
+            for ca in cas
+        ]
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error listing CAs: {str(e)}"
+        )
+
+
+@app.get("/ca/{ca_id}", response_model=CAResponse)
+async def get_ca(ca_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Obtener detalles de una CA específica
+    
+    Args:
+        ca_id: ID de la CA
+    
+    Returns:
+        Detalles completos de la CA incluyendo certificado
+    """
+    try:
+        result = await db.execute(
+            select(CertificateAuthority).where(CertificateAuthority.id == ca_id)
+        )
+        ca = result.scalar_one_or_none()
+        
+        if not ca:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"CA with ID {ca_id} not found"
+            )
+        
+        return CAResponse(
+            id=ca.id,
+            common_name=ca.common_name,
+            certificate_pem=ca.certificate_pem,
+            created_at=ca.created_at
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting CA: {str(e)}"
+        )
+
+
+@app.get("/certificates", response_model=list[CertificateListResponse])
+async def list_certificates(
+    ca_id: int | None = None,
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Listar certificados emitidos
+    
+    Args:
+        ca_id: Filtrar por CA específica (opcional)
+        skip: Número de registros a omitir (paginación)
+        limit: Número máximo de registros a devolver
+    
+    Returns:
+        Lista de certificados
+    """
+    try:
+        query = select(Certificate)
+        
+        if ca_id is not None:
+            query = query.where(Certificate.ca_id == ca_id)
+        
+        query = query.offset(skip).limit(limit)
+        result = await db.execute(query)
+        certificates = result.scalars().all()
+        
+        return [
+            CertificateListResponse(
+                id=cert.id,
+                serial_number=cert.serial_number,
+                common_name=cert.common_name,
+                ca_id=cert.ca_id,
+                created_at=cert.created_at,
+                expires_at=cert.expires_at
+            )
+            for cert in certificates
+        ]
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error listing certificates: {str(e)}"
+        )
+
+
+@app.get("/certificates/{cert_id}", response_model=CertificateResponse)
+async def get_certificate(cert_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Obtener detalles de un certificado específico
+    
+    Args:
+        cert_id: ID del certificado
+    
+    Returns:
+        Detalles completos del certificado incluyendo PEM
+    """
+    try:
+        result = await db.execute(
+            select(Certificate).where(Certificate.id == cert_id)
+        )
+        cert = result.scalar_one_or_none()
+        
+        if not cert:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Certificate with ID {cert_id} not found"
+            )
+        
+        return CertificateResponse(
+            id=cert.id,
+            serial_number=cert.serial_number,
+            common_name=cert.common_name,
+            certificate_pem=cert.certificate_pem,
+            ca_id=cert.ca_id,
+            created_at=cert.created_at,
+            expires_at=cert.expires_at
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting certificate: {str(e)}"
+        )
 
 
 @app.post("/ca", response_model=CACreateResponse)
@@ -471,36 +629,52 @@ async def validate_certificate(
 
 
 @app.get("/crl", response_class=PlainTextResponse)
-async def get_crl(db: AsyncSession = Depends(get_db), crypto: CryptoHelper = Depends(get_crypto_helper)):
+async def get_crl(
+    ca_common_name: str,
+    db: AsyncSession = Depends(get_db),
+    crypto: CryptoHelper = Depends(get_crypto_helper)
+):
     """
-    Obtener la Certificate Revocation List (CRL) en formato PEM
+    Obtener la Certificate Revocation List (CRL) en formato PEM de una CA específica
+    
+    Args:
+        ca_common_name: Common name de la CA que genera la CRL
     
     Returns:
-        CRL en formato PEM
+        CRL en formato PEM firmada por la CA especificada
     """
     try:
-        # Obtener la primera CA (por simplicidad; en producción, especificar cuál)
-        result = await db.execute(select(CertificateAuthority).limit(1))
+        # Buscar la CA por common_name
+        result = await db.execute(
+            select(CertificateAuthority).where(
+                CertificateAuthority.common_name == ca_common_name
+            )
+        )
         ca = result.scalar_one_or_none()
         
         if not ca:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No CA found"
+                detail=f"CA with common_name '{ca_common_name}' not found"
             )
         
-        # Obtener seriales revocados
-        result = await db.execute(select(RevokedCertificate.serial_number))
-        revoked_serials = [row[0] for row in result.fetchall()]
+        # Obtener solo los certificados revocados emitidos por esta CA
+        result = await db.execute(
+            select(RevokedCertificate)
+            .join(Certificate, Certificate.id == RevokedCertificate.certificate_id)
+            .where(Certificate.ca_id == ca.id)
+        )
+        revoked_records = result.scalars().all()
+        revoked_serials = [rec.serial_number for rec in revoked_records]
         
         # Parsear certificado de la CA
         ca_cert = pki_utils.certificate_from_pem(ca.certificate_pem)
         
-        # Descifrar la clave privada
+        # Descifrar la clave privada de la CA
         decrypted_private_key_pem = crypto.decrypt(ca.private_key)
         ca_private_key = pki_utils.private_key_from_pem(decrypted_private_key_pem)
         
-        # Generar la CRL
+        # Generar la CRL firmada por esta CA
         crl_pem = pki_utils.generate_crl(ca_cert, ca_private_key, revoked_serials)
         
         return crl_pem
